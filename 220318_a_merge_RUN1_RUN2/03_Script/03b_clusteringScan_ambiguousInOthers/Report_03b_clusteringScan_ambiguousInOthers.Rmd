@@ -1,0 +1,272 @@
+---
+output:
+  html_document:
+    theme: cerulean
+    toc: true
+    toc_float: true
+    toc_depth: 2
+---
+
+
+
+
+<!-- Javascript for zooming on figures (adapted from: https://stackoverflow.com/questions/40401680) -->
+
+<!-- Jquery import conflicts with DT::datatable so needs to be commented here -->
+<!-- <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script> -->
+
+<style>
+
+.zoomDiv {
+  display: none;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 50;
+  transform: translate(-50%, -50%);
+  background-color: #FFFFFF;
+  box-shadow: 0px 0px 50px #888888;
+  width: fit-content;
+  max-width: 90%;
+  max-height: 90%;
+  overflow: auto;
+}
+
+.zoomImg {
+  width: 100%;
+}
+
+[id^="dimensionality-reduction"] img {
+  width: 100%;
+}
+
+[id^="categorical-distributions"] img {
+  width: 50%;
+}
+
+</style>
+<!-- Last styles set figure to 100% (default 25%) in specified sections -->
+
+
+
+<script type="text/javascript">
+  $(document).ready(function() {
+    $('body').prepend("<div class=\"zoomDiv\"><img src=\"\" class=\"zoomImg\"></div>");
+    // onClick for all img except the zoomed one and link ones (filter)
+    // use 'img.zoom' and out.extra='class=\"zoom\"' in chunk to specify manually which chunk images can be zoomed
+    $('img:not(.zoomImg)').filter(':not(a *)').click(function() {
+      $('.zoomImg').attr('src', $(this).attr('src'));
+      $('.zoomDiv').show();
+    });
+    // onClick function for hiding div
+    $('img.zoomImg').click(function() {
+      $('.zoomDiv').hide();
+    });
+  });
+</script>
+
+
+
+
+<!-- Load spectrum color picker code -->
+```{js loadSpectrumJS, echo = FALSE, code=readLines("spectrum.js")}
+```
+```{css loadSpectrumCSS, echo = FALSE, code=readLines("spectrum.css")}
+```
+
+<!-- Prepare a js function extracting traces color from plotly figure -->
+```{js getColorTab, echo = FALSE}
+
+// Ask figure template from plotly, extract markers color (scatter and scattergl only), and place them in clipboard
+getColorTab = function(plotLyFigure, type = "scatter", colorFormatFun = "hex") 
+  { 
+    var template = Plotly.makeTemplate(plotLyFigure);
+    var resultColorString = "";
+    for (curTrace in template.data[type])
+    {
+      // Only use traces having markers
+      if(template.data[type][curTrace].mode == "markers") resultColorString += '"' + template.data[type][curTrace].name + '" = "' + tinycolor(template.data[type][curTrace].marker.color).toString(colorFormatFun) + '"\n';
+    }
+    // Create a dummy element to copy content to clipboard
+    var textarea = document.createElement("textarea"); textarea.textContent = resultColorString; textarea.style.position = "fixed"; document.body.appendChild(textarea); textarea.select(); document.execCommand("copy"); document.body.removeChild(textarea);
+    alert("\n" + resultColorString + "\n\nCopied to clipboard !");
+  } 
+```
+
+
+
+
+```{r, include=FALSE}
+# Set hook for PNG optimization ('optipng' must be installed on system)
+#knitr::knit_hooks$set(optipng = knitr::hook_optipng)
+
+# Set chunks default options
+knitr::opts_chunk$set(results='asis',
+                      echo = FALSE,           # Do not show chunks code
+                      message = FALSE,        # Hide R regular text output in reports
+                      warning = TRUE,         # Show warning messages
+                      error = FALSE,          # Stop generating report on errors
+                      cache = FALSE,          # Disable chunk result caching
+                      cache.comments = FALSE, # Changing comments does not invalidate cache
+                      fig.dim = c(5, 5),      # Size of device for R figures
+                      autodep = TRUE,         # Automatic chunk dependencies if cache enabled
+                      optipng = '-o2');       # PNG optimization level (2=default, 5=slow, 7=very slow)
+```
+
+
+
+
+```{r, warning=FALSE, cache = FALSE}
+
+### Initialize required steps for recursion (save environment...)
+ 
+if(! exists('SUBCLUSTERING_RECURSION_CURRENTLEVEL'))
+{
+    # On first call, define the current recursion level to 1 (not defined in 
+    # analysisParams). It is then incremented and passed to child environments 
+    # to stop recursion at desired level.
+    SUBCLUSTERING_RECURSION_CURRENTLEVEL = 1;
+}
+
+# Save initial environment (to be altered and used for recursive calls)
+#initialRenderEnvironment = as.environment(as.list(globalenv(), all.names=TRUE))
+initialRenderEnvironment = new.env();
+for(n in ls(environment(), all.names=TRUE)) assign(n, get(n, environment()), initialRenderEnvironment)
+
+
+### Define working folder
+WORKING_DIR   = getwd();
+
+
+### Load libraries, global functions/variables, and chunks
+source( file.path( WORKING_DIR, "00_generalDeps.R"));
+
+# Import chunks from source files
+read_chunk( path=file.path( WORKING_DIR, "01_prepareData.R"));
+read_chunk( path=file.path( WORKING_DIR, "02_variableGenes.R"));
+read_chunk( path=file.path( WORKING_DIR, "03_cellHeterogeneity.R"));
+```
+
+
+
+
+---
+title: `r paste( GLOBAL_DESCRIPTION, ANALYSIS_STEP_NAME, sep ="<BR>")`
+---
+
+
+
+
+```{r }
+
+### Create output directory
+dir.create( PATH_ANALYSIS_OUTPUT, showWarnings = FALSE);
+
+
+### Record starting time (for report and file names)
+startTime = Sys.time();
+startTimeReport   = format( startTime, "%Y %m %d %H:%M:%S")
+startTimeFileName = format( startTime, "%Y_%m_%d_%H_%M_%S")
+
+
+### Initialize utils
+
+# Create a hash for all parameters
+paramsHash = digest( environment(), algo="crc32");
+
+# Create a 'safe' unique prefix for output files (now specified at project scale in globalParams.R)
+#outputFilesPrefix = path_sanitize( gsub("([[:punct:]])|\\s+",
+#                                        "_",
+#                                        paste0(PROJECT_NAME, "_",
+#                                               SAMPLE_NAME, "_",
+#                                               startTimeFileName, "_",
+#                                               paramsHash, "_")),
+#                                   replacement = "_");
+
+# Set seed for pseudo random number generator
+set.seed(SEED);
+
+# Set the use of multiple cores using 'future' library, as implemented in Seurat3 when possible
+# https://github.com/satijalab/seurat/issues/457
+plan(strategy = "multicore", workers = NBCORES);
+
+# Create a hidden plotly in a tagList to allow using them in loops later
+cat('<div style="display: none">');
+htmltools::tagList(plot_ly(x = rnorm(10), type = "histogram"))
+cat('</div>');
+```
+
+
+
+
+# Run informations {.tabset .tabset-fade}
+
+## Run
+<center>
+```{r }
+pander( c( 'Date'     = startTimeReport,
+           'Sample'   = EXPERIMENT_PROJECT_NAME,
+           'Hash'     = paramsHash));
+```
+</center>
+
+## Parameters
+```{r }
+listParams = as.list( environment());
+pander(listParams[sort(names(listParams)[!sapply(listParams, is.environment)])]); # Show params in alphabetical order
+```
+
+## System
+<center>
+```{r }
+showSimpleDT( Sys.info())
+```
+</center>
+
+## R
+```{r }
+pander( sessionInfo());
+```
+
+
+
+# Load data & normalization
+```{r }
+<<loadData>>
+<<normalizeData>>
+```
+<br /><br />
+
+
+
+
+# Variable genes
+```{r , warning = FALSE }
+<<findVariableGenes_seuratMethod>>
+```
+
+Number of variable genes found: `r variablesGenesStats`
+
+```{r }
+#<<findVariableGenes_summaryPlot>>
+```
+<br />
+
+Top `r VARIABLE_FEATURES_SHOWTOP` most variable annotations:
+
+```{r }
+<<findVariableGenes_summaryTable>>
+```
+<br /><br />
+
+
+
+
+# Clusters identification {.tabset .tabset-fade}
+
+```{r , fig.dim = c(6,6), out.width='25%', warning= FALSE}
+<<heterogeneity>>
+```
+
+<!-- Ending the 'resolution' tabset section -->
+# {.toc-ignore}

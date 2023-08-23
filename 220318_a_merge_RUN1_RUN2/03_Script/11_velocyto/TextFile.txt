@@ -1,0 +1,27 @@
+#!/bin/bash
+
+# Execute 'velocyto' command line program to compute spliced/unspliced matrices
+
+
+# Set experiment base path
+export EXPERIMENT_PATH="/mnt/DOSI/PNLAB/BIOINFO/Project/scRNAseq_sarcoma/220318_a_merge_RUN1_RUN2"
+
+# Provide the path to the genome annotation file
+export GENOME_ANNOTATION_PATH="${EXPERIMENT_PATH}/01_Reference/Genome/CellRanger/refdata-gex-mm10-2020-A/genes/genes.gtf"
+
+# Base path to retrieve barcode file corresponding to each BAM
+export BARCODE_BASE_PATH="${EXPERIMENT_PATH}/00_RawData"
+
+
+# Create the folder where to put the results (loom file)
+export OUTPUT_PATH="${EXPERIMENT_PATH}/05_Output/11_velocyto"
+mkdir -p $OUTPUT_PATH 
+
+
+# Execute Velocyto on 10x data
+cd $OUTPUT_PATH
+
+# Search paths to BAM files and execute velocyto for each
+find "$EXPERIMENT_PATH/00_RawData" -type f -iname "*.bam" -print0 | xargs -0 -L1 -P2 -t sh -c 'velocyto run -o "$OUTPUT_PATH" -b "${EXPERIMENT_PATH}/00_RawData/$(basename $(dirname $0))_filtered_feature_bc_matrix/barcodes.tsv.gz" --sampleid "$(basename $(dirname $0))" "$0" "$GENOME_ANNOTATION_PATH"'  
+
+ 

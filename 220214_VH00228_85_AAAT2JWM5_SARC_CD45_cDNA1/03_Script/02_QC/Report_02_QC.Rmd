@@ -1,0 +1,639 @@
+---
+output:
+  html_document:
+    theme: cerulean
+    toc: true
+    toc_float: true
+    toc_depth: 3
+---
+
+
+
+
+<!-- Javascript for zooming on figures (adapted from: https://stackoverflow.com/questions/40401680) -->
+
+<!-- Jquery import conflicts with DT::datatable so needs to be commented here -->
+<!-- <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script> -->
+
+<style>
+.zoomDiv {
+  display: none;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 50;
+  transform: translate(-50%, -50%);
+  background-color: #FFFFFF;
+  box-shadow: 0px 0px 50px #888888;
+  width: fit-content;
+  max-width: 90%;
+  max-height: 90%;
+  overflow: auto;
+}
+
+.zoomImg {
+  width: 100%;
+}
+</style>
+
+<script type="text/javascript">
+  $(document).ready(function() {
+    $('body').prepend("<div class=\"zoomDiv\"><img src=\"\" class=\"zoomImg\"></div>");
+    // onClick for all img except the zoomed one and link ones (filter)
+    // use 'img.zoom' and out.extra='class=\"zoom\"' in chunk to specify manually which chunk images can be zoomed
+    $('img:not(.zoomImg)').filter(':not(a *)').click(function() {
+      $('.zoomImg').attr('src', $(this).attr('src'));
+      $('.zoomDiv').show();
+    });
+    // onClick function for hiding div
+    $('img.zoomImg').click(function() {
+      $('.zoomDiv').hide();
+    });
+  });
+</script>
+
+
+
+
+```{r rmd_setKnitrOptions, include=FALSE}
+# Set hook for PNG optimization ('optipng' must be installed on system)
+#knitr::knit_hooks$set(optipng = knitr::hook_optipng)
+
+# Set chunks default options
+knitr::opts_chunk$set(results='asis',
+                      echo = FALSE,           # Do not show chunks code
+                      message = FALSE,        # Hide R regular text output in reports
+                      warning = FALSE,         # Show warning messages
+                      error = FALSE,          # Stop generating report on errors
+                      cache = FALSE,          # Disable chunk result caching
+                      cache.comments = FALSE, # Changing comments does not invalidate cache
+                      fig.dim = c(5, 5),      # Size of device for R figures
+                      autodep = TRUE,         # Automatic chunk dependencies if cache enabled
+                      optipng = '-o2');       # PNG optimization level (2=default, 5=slow, 7=very slow)
+```
+
+
+
+
+```{r rmd_loadParamsAndDependencies, warning=FALSE, cache = FALSE}
+### Define working folder
+WORKING_DIR   = getwd();
+
+
+### Load libraries, global functions/variables, and chunks
+source( file.path( WORKING_DIR, "00_generalDeps.R"));
+
+# Import chunks from source files
+read_chunk( path=file.path( WORKING_DIR, "01_prepareData.R"));
+read_chunk( path=file.path( WORKING_DIR, "02_variableGenes.R"));
+read_chunk( path=file.path( WORKING_DIR, "03_cellHeterogeneity.R"));
+read_chunk( path=file.path( WORKING_DIR, "90_finalize.R"));
+```
+
+
+
+
+---
+title: `r paste( GLOBAL_DESCRIPTION, ANALYSIS_STEP_NAME, sep ="<BR>")`
+---
+
+
+
+
+```{r rmd_initFunctions}
+
+### Create output directory
+dir.create( PATH_ANALYSIS_OUTPUT, showWarnings = FALSE);
+
+
+### Record starting time (for report and file names)
+startTime = Sys.time();
+startTimeReport   = format( startTime, "%Y %m %d %H:%M:%S")
+startTimeFileName = format( startTime, "%Y_%m_%d_%H_%M_%S")
+
+
+### Initialize utils
+
+# Create a hash for all parameters
+paramsHash = digest( environment(), algo="murmur32");
+
+# Create a 'safe' unique prefix for output files (now specified at project scale in globalParams.R)
+#outputFilesPrefix = path_sanitize( gsub("([[:punct:]])|\\s+",
+#                                        "_",
+#                                        paste0(PROJECT_NAME, "_",
+#                                               SAMPLE_NAME, "_",
+#                                               startTimeFileName, "_",
+#                                               paramsHash, "_")),
+#                                   replacement = "_");
+
+# Set seed for pseudo random number generator
+set.seed(SEED);
+
+# Set the use of multiple cores using 'future' library, as implemented in Seurat3 when possible
+# https://github.com/satijalab/seurat/issues/457
+plan(strategy = "multicore", workers = NBCORES);
+
+```
+
+
+
+
+# Primary analysis (QC)
+
+
+
+
+## Run informations {.tabset .tabset-fade}
+
+### Run
+<center>
+```{r rmd_runInfo_run}
+pander( c( 'Date'     = startTimeReport,
+           'Sample'   = EXPERIMENT_PROJECT_NAME,
+           'Hash'     = paramsHash));
+```
+</center>
+
+### Parameters
+```{r rmd_runInfo_params}
+listParams = as.list( environment());
+pander(listParams[order(names(listParams))]); # Show params in alphabetical order
+```
+
+### System
+<center>
+```{r rmd_runInfo_sysInfo}
+showSimpleDT( Sys.info())
+```
+</center>
+
+### R
+```{r rmd_runInfo_r}
+pander( sessionInfo());
+```
+
+<!-- Ending the tabset section -->
+## {.toc-ignore}
+<br /><br />
+
+
+
+
+```{r rmd_dataLoad, warning = TRUE, fig.dim = c(9,6)}
+<<loadData>>
+```
+
+
+## HTO demultiplexing
+
+```{r rmd_demuxHTO, fig.dim = c(9,6)}
+<<demuxHTO>>
+```
+
+```{r rmd_demuxHTO_tsne, out.width='50%', fig.dim = c(9,6)}
+<<demuxHTO_tsne>>
+```
+
+### Selection
+
+```{r rmd_demuxHTO_tsne_final, fig.dim = c(9,6)}
+<<demuxHTO_tsne_final>>
+```
+
+## Filtering cells
+
+```{r rmd_dataFilterAndNormalize, out.width='50%'}
+<<filterData_selection>>
+<<filterData_summaryPlot>>
+<<filterData_filterObject>>
+<<normalizeData>>
+```
+<br /><br />
+
+
+
+
+## Variable genes
+```{r rmd_findVariableGenes}
+<<findVariableGenes_seuratMethod>>
+```
+
+Number of variable genes found: `r variablesGenesStats`
+
+```{r rmd_findVariableGenes_summaryPlot}
+<<findVariableGenes_summaryPlot>>
+```
+<br />
+
+Top `r VARIABLE_FEATURES_SHOWTOP` most variable annotations:
+
+```{r rmd_findVariableGenes_summaryTable}
+<<findVariableGenes_summaryTable>>
+```
+<br /><br />
+
+
+
+
+
+## PCA results
+
+PCA projections for dimensions `r paste( 1:PCA_PLOTS_NBDIMS, collapse="/")` (colored by batch)  
+```{r rmd_heterogeneity_pca, out.width='33%'}
+<<heterogeneity_pca>>
+```
+<br />
+
+UMIs counts on PCA dimensions `r paste( 1:PCA_PLOTS_NBDIMS, collapse="/")`  
+```{r rmd_heterogeneity_pca_umisCounts, out.width='33%'}
+<<heterogeneity_pca_umisCounts>>
+```
+<br />
+
+Genes counts on PCA dimensions `r paste( 1:PCA_PLOTS_NBDIMS, collapse="/")`  
+```{r rmd_heterogeneity_pca_genesCounts, out.width='33%'}
+<<heterogeneity_pca_genesCounts>>
+```
+<br />
+
+Correlation (Spearman) of PCA dimensions `r paste( 1:PCA_PLOTS_NBDIMS, collapse="/")` with UMIs and genes counts  
+```{r rmd_heterogeneity_pca_correlations, fig.dim = c(9,6)}
+<<heterogeneity_pca_correlations>>
+```
+<br />
+
+PCA loadings of top `r PCA_PLOTS_NBFEATURES` features for dimensions `r paste( 1:PCA_PLOTS_NBDIMS, collapse="/")`  
+```{r rmd_heterogeneity_pca_loadings, fig.dim = c(4, 4), out.width='33%'}
+<<heterogeneity_pca_loadings>>
+```
+<br /><br />
+
+
+
+
+## Dimensionality reduction
+```{r rmd_heterogeneity_dimReduc, warning=FALSE}
+<<heterogeneity_dimReduc>>
+```
+
+### Colored by batch {.tabset .tabset-fade}
+
+#### UMAP
+```{r rmd_heterogeneity_dimReduc_batch_plot_UMAP}
+useReduction='umap'
+<<dimreduc_ggplotly_overlayBatches>>
+rm("useReduction");
+```
+
+<!-- #### tSNE -->
+<!-- ```{r rmd_heterogeneity_dimReduc_batch_plot_tSNE} -->
+<!-- useReduction='tsne'; -->
+<!-- <<dimreduc_ggplotly_overlayBatches>> -->
+<!-- rm("useReduction"); -->
+<!-- ``` -->
+
+<!-- Ending the tabset section -->
+### {.toc-ignore}
+<br /><br />
+
+
+### Colored by HTO {.tabset .tabset-fade}
+
+#### UMAP
+```{r rmd_heterogeneity_dimReduc_HTO_plot_UMAP}
+useReduction='umap'
+<<dimreduc_ggplotly_overlayHTOs>>
+rm("useReduction");
+```
+
+<!-- #### tSNE -->
+<!-- ```{r rmd_heterogeneity_dimReduc_HTO_plot_tSNE} -->
+<!-- useReduction='tsne'; -->
+<!-- <<dimreduc_ggplotly_overlayHTOs>> -->
+<!-- rm("useReduction"); -->
+<!-- ``` -->
+
+<!-- Ending the tabset section -->
+### {.toc-ignore}
+<br /><br />
+
+
+
+
+## Batch vs HTO counts
+```{r rmd_compareBatchHTO_table}
+<<compareBatchHTO_table>>
+```
+<br /><br />
+
+
+
+
+## Clusters identification
+
+### Cells distribution
+```{r rmd_heterogeneity_identifyClusters}
+<<heterogeneity_identifyClusters>>
+```
+
+### Statistics by cluster
+```{r rmd_heterogeneity_identifyClusters_splitStats}
+<<heterogeneity_identifyClusters_splitStats>>
+```
+<br /><br />
+
+
+### Clusters projection {.tabset .tabset-fade}
+
+#### UMAP
+```{r rmd_heterogeneity_dimReduc_plot_UMAP}
+useReduction='umap'
+<<heterogeneity_dimReduc_interactivePlot>>
+rm("useReduction");
+```
+
+<!-- #### tSNE -->
+<!-- ```{r rmd_heterogeneity_dimReduc_plot_tSNE} -->
+<!-- useReduction='tsne'; -->
+<!-- <<heterogeneity_dimReduc_interactivePlot>> -->
+<!-- rm("useReduction"); -->
+<!-- ``` -->
+
+<!-- Ending the tabset section -->
+### {.toc-ignore}
+<br /><br />
+
+
+
+### HTO subsets {.tabset .tabset-fade}
+
+#### UMAP
+```{r rmd_heterogeneity_dimReduc_plot_byHTO_UMAP, fig.show='hide'} 
+# hide figure output to mask a bug with ggplotly showing previous image"
+useReduction='umap'
+<<rmd_heterogeneity_dimReduc_plot_byHTO>>
+rm("useReduction");
+```
+
+<!-- #### tSNE -->
+<!-- ```{r rmd_heterogeneity_dimReduc_plot_byHTO_tSNE, fig.show='hide'}  -->
+<!-- # hide figure output to mask a bug with ggplotly showing previous image" -->
+<!-- useReduction='tsne'; -->
+<!-- <<rmd_heterogeneity_dimReduc_plot_byHTO>> -->
+<!-- rm("useReduction"); -->
+<!-- ``` -->
+
+<!-- Ending the tabset section -->
+### {.toc-ignore}
+<br /><br />
+
+
+### HTO counts
+
+```{r rmd_compareClustersHTO_table}
+<<compareClustersHTO_table>>
+```
+
+<br />
+<br />
+
+
+
+
+## Marker genes
+```{r rmd_heterogeneity_markerGenes}
+<<heterogeneity_markerGenes>>
+```
+
+### Marker genes list
+```{r rmd_heterogeneity_markerGenes_table}
+<<heterogeneity_markerGenes_table>>
+```
+<br />
+
+### Marker genes expression {.tabset .tabset-fade}
+
+#### UMAP {.tabset .tabset-fade}
+```{r rmd_heterogeneity_markerGenes_expression_projection_UMAP, fig.dim = c(4, 4), out.width='25%'}
+useReduction='umap';
+
+cat("\n<a href='#clusters-projection'>");
+<<heterogeneity_dimReduc_thumbnail>>
+cat("</a> \n \n");
+
+<<heterogeneity_markerGenes_expression_projection>>
+
+rm("useReduction");
+```
+
+<!-- Ending the tabset section -->
+#### {.toc-ignore}
+
+<!-- #### tSNE {.tabset .tabset-fade} -->
+<!-- ```{r rmd_heterogeneity_markerGenes_expression_projection_tSNE, fig.dim = c(4, 4), out.width='25%'} -->
+<!-- useReduction='tsne'; -->
+
+<!-- cat("\n<a href='#clusters-projection'>"); -->
+<!-- <<heterogeneity_dimReduc_thumbnail>> -->
+<!-- cat("</a> \n \n"); -->
+
+<!-- <<heterogeneity_markerGenes_expression_projection>> -->
+
+<!-- rm("useReduction"); -->
+<!-- ``` -->
+
+<!-- <!-- Ending the tabset section --> -->
+<!-- #### {.toc-ignore} -->
+
+#### Clusters violin {.tabset .tabset-fade}
+```{r rmd_heterogeneity_markerGenes_expression_violin, fig.dim = c(4, 4), out.width='25%'}
+cat("\n<a href='#clusters-projection'>");
+useReduction='umap'; #c( 'umap', 'tsne');
+<<heterogeneity_dimReduc_thumbnail>>
+rm("useReduction");
+cat("</a> \n \n");
+
+<<heterogeneity_markerGenes_expression_violin>>
+```
+
+<!-- Ending the tabset section -->
+#### {.toc-ignore}
+
+<!-- Ending the tabset section -->
+### {.toc-ignore}
+<br /><br />
+
+
+
+
+## Monitored genes
+```{r rmd_heterogeneity_monitoredGenes, warning = TRUE}
+<<heterogeneity_monitoredGenes>>
+```
+
+### Monitored genes heatmap
+
+Expression heatmap of monitored genes sorted by Seurat clusters:
+
+```{r rmd_heterogeneity_monitoredGenes_heatmap, fig.dim = c(8, min(1+(length(unlist(MONITORED_GENES))/10), 150))}
+<<heterogeneity_monitoredGenes_heatmap>>
+```
+
+### Monitored genes expression {.tabset .tabset-fade}
+
+#### UMAP {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_projection_UMAP, fig.dim = c(4, 4), out.width='25%'}
+useReduction='umap'
+
+cat("\n<a href='#clusters-projection'>");
+<<heterogeneity_dimReduc_thumbnail>>
+cat("</a> \n \n");
+
+<<heterogeneity_monitoredGenes_expression_projection>>
+
+rm("useReduction");
+```
+
+<!-- Ending the tabset section -->
+#### {.toc-ignore}
+
+<!-- #### tSNE {.tabset .tabset-fade} -->
+<!-- ```{r rmd_heterogeneity_monitoredGenes_expression_projection_tSNE, fig.dim = c(4, 4), out.width='25%'} -->
+<!-- useReduction='tsne' -->
+
+<!-- cat("\n<a href='#clusters-projection'>"); -->
+<!-- #<<heterogeneity_dimReduc_thumbnail>> -->
+<!-- cat("</a> \n \n"); -->
+
+<!-- #<<heterogeneity_monitoredGenes_expression_projection>> -->
+
+<!-- rm("useReduction"); -->
+<!-- ``` -->
+
+<!-- <!-- Ending the tabset section --> -->
+<!-- #### {.toc-ignore} -->
+
+#### Clusters violin {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_violin, fig.dim = c(4, 4), out.width='25%'}
+cat("\n<a href='#clusters-projection'>");
+useReduction='umap'; #c( 'umap', 'tsne');
+<<heterogeneity_dimReduc_thumbnail>>
+rm("useReduction");
+cat("</a> \n \n");
+
+<<heterogeneity_monitoredGenes_expression_violin>>
+```
+
+<!-- Ending the tabset section -->
+#### {.toc-ignore}
+
+<!-- Ending the tabset section -->
+### {.toc-ignore}
+<br /><br />
+
+
+
+
+## Modules analysis
+```{r rmd_heterogeneity_modules}
+#<<heterogeneity_modules>>
+#<<heterogeneity_modules_scoring>>
+```
+
+### Modules scoring heatmap
+
+Heatmap of modules scoring sorted by Seurat clusters:
+
+```{r rmd_heterogeneity_modules_heatmap, fig.dim = c(8, min(1+(length(MODULES_GENES)/10), 150))}
+#<<heterogeneity_modules_heatmap>>
+```
+
+### Modules scoring {.tabset .tabset-fade}
+
+#### UMAP {.tabset .tabset-fade .tabset-pills}
+```{r rmd_heterogeneity_modules_expression_projection_UMAP, fig.dim = c(4, 4), out.width='25%'}
+useReduction='umap'
+
+cat("\n<a href='#clusters-projection'>");
+#<<heterogeneity_dimReduc_thumbnail>>
+cat("</a> \n \n");
+
+#<<heterogeneity_modules_expression_projection>>
+#<<heterogeneity_modules_expression_projection_pngFile>>
+
+rm("useReduction");
+```
+
+<!-- Ending the tabset section -->
+#### {.toc-ignore}
+
+<!-- #### tSNE {.tabset .tabset-fade .tabset-pills} -->
+<!-- ```{r rmd_heterogeneity_modules_expression_projection_tSNE, fig.dim = c(4, 4), out.width='25%'} -->
+<!-- useReduction='tsne' -->
+
+<!-- cat("\n<a href='#clusters-projection'>"); -->
+<!-- #<<heterogeneity_dimReduc_thumbnail>> -->
+<!-- cat("</a> \n \n"); -->
+
+<!-- #<<heterogeneity_modules_expression_projection>> -->
+<!-- #<<heterogeneity_modules_expression_projection_pngFile>> -->
+
+<!-- rm("useReduction"); -->
+<!-- ``` -->
+
+<!-- <!-- Ending the tabset section --> -->
+<!-- #### {.toc-ignore} -->
+
+#### Clusters violin {.tabset .tabset-fade}
+```{r rmd_heterogeneity_modules_expression_violin, fig.dim = c(4, 4), out.width='25%'}
+cat("\n<a href='#clusters-projection'>");
+useReduction='umap'; #c( 'umap', 'tsne');
+#<<heterogeneity_dimReduc_thumbnail>>
+rm("useReduction");
+cat("</a> \n \n");
+
+#<<heterogeneity_modules_expression_violin>>
+#<<heterogeneity_modules_expression_violin_pngFile>>
+```
+
+<!-- Ending the tabset section -->
+#### {.toc-ignore}
+
+
+
+```{r rmd_final_saveSessionImage}
+<<final_saveSessionImage>>
+```
+
+
+
+
+
+
+<!-- ### Elimination of sub-populations -->
+
+<!-- In this analysis we will write to file not wanted cells (cells in cluster 4 were analyzed as proliferative cells and cells in cluster 5 as contiminating cells) in order to have them removed from future analyses. -->
+
+<!-- ```{r rmd_removingMinoritySubPopulation} -->
+
+<!-- # Identify the cells to remove because they are proliferative cells -->
+<!-- cell_to_remove_proliferation = colnames(sc10x@data)[ sc10x@ident == 4] -->
+<!-- cat("<BR>Number of cells considerated as proliferative:", length( cell_to_remove_proliferation)) -->
+<!-- write.table( data.frame( cellid = cell_to_remove_proliferation), file=file.path( OUTPUT_DIR, "excluded_cells_proliferation.txt"), quote = FALSE, col.names = TRUE, row.names = FALSE, sep="\t") -->
+
+<!-- # Identify the cells to remove because they are contamination cells -->
+<!-- cell_to_remove_contamination = colnames( sc10x@data)[ sc10x@ident == 5] -->
+<!-- cat("<BR>Number of cells considerated as contamination:", length( cell_to_remove_contamination)) -->
+<!-- write.table( data.frame( cellid = cell_to_remove_contamination), file=file.path( OUTPUT_DIR, "excluded_cells_contamination.txt"), quote = FALSE, col.names = TRUE, row.names = FALSE, sep="\t") -->
+
+<!-- # Identify the cells to keep and export the filtered raw expression table to file -->
+<!-- cell_to_keep = colnames( sc10x@data)[ sc10x@ident %in% c(0,1,2,3)] -->
+
+<!-- df_raw_to_export = as.data.frame( as.matrix( sc10x@raw.data))[ , cell_to_keep] -->
+<!-- write.table( df_raw_to_export, file = file.path( OUTPUT_DIR, "filtered_raw_expression_matrix.csv"), quote = FALSE, col.names = TRUE, row.names = TRUE, sep="\t") -->
+
+<!-- df_norm_to_export = as.data.frame( as.matrix( sc10x@data))[ , cell_to_keep] -->
+<!-- write.table( df_norm_to_export, file = file.path( OUTPUT_DIR, "filtered_normalized_expression_matrix.csv"), quote = FALSE, col.names = TRUE, row.names = TRUE, sep="\t") -->
+
+<!-- cat("<BR>Number of cells to keep:", length( cell_to_keep)) -->
+<!-- ``` -->

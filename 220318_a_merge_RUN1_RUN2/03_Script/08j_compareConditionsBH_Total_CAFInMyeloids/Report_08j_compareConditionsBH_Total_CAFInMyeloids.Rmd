@@ -1,0 +1,453 @@
+---
+output:
+  html_document:
+    theme: cerulean
+    toc: true
+    toc_float: true
+    toc_depth: 3
+---
+
+
+
+
+<!-- Javascript for zooming on figures (adapted from: https://stackoverflow.com/questions/40401680) -->
+
+<!-- Jquery import conflicts with DT::datatable so needs to be commented here -->
+<!-- <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script> -->
+
+<style>
+.zoomDiv {
+  display: none;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 50;
+  transform: translate(-50%, -50%);
+  background-color: #FFFFFF;
+  box-shadow: 0px 0px 50px #888888;
+  width: fit-content;
+  max-width: 90%;
+  max-height: 90%;
+  overflow: auto;
+}
+
+.zoomImg {
+  width: 100%;
+}
+</style>
+
+<script type="text/javascript">
+  $(document).ready(function() {
+    $('body').prepend("<div class=\"zoomDiv\"><img src=\"\" class=\"zoomImg\"></div>");
+    // onClick for all img except the zoomed one and link ones (filter)
+    // use 'img.zoom' and out.extra='class=\"zoom\"' in chunk to specify manually which chunk images can be zoomed
+    $('img:not(.zoomImg)').filter(':not(a *)').click(function() {
+      $('.zoomImg').attr('src', $(this).attr('src'));
+      $('.zoomDiv').show();
+    });
+    // onClick function for hiding div
+    $('img.zoomImg').click(function() {
+      $('.zoomDiv').hide();
+    });
+  });
+</script>
+
+
+
+
+<!-- Load spectrum color picker code -->
+```{js loadSpectrumJS, echo = FALSE, code=readLines("spectrum.js")}
+```
+```{css loadSpectrumCSS, echo = FALSE, code=readLines("spectrum.css")}
+```
+
+<!-- Prepare a js function extracting traces color from plotly figure -->
+```{js getColorTab, echo = FALSE}
+
+// Ask figure template from plotly, extract markers color (scatter and scattergl only), and place them in clipboard
+getColorTab = function(plotLyFigure, type = "scatter", colorFormatFun = "hex") 
+  { 
+    var template = Plotly.makeTemplate(plotLyFigure);
+    var resultColorString = "";
+    for (curTrace in template.data[type])
+    {
+      // Only use traces having markers
+      if(template.data[type][curTrace].mode == "markers") resultColorString += '"' + template.data[type][curTrace].name + '" = "' + tinycolor(template.data[type][curTrace].marker.color).toString(colorFormatFun) + '"\n';
+    }
+    // Create a dummy element to copy content to clipboard
+    var textarea = document.createElement("textarea"); textarea.textContent = resultColorString; textarea.style.position = "fixed"; document.body.appendChild(textarea); textarea.select(); document.execCommand("copy"); document.body.removeChild(textarea);
+    alert("\n" + resultColorString + "\n\nCopied to clipboard !");
+  } 
+```
+
+
+
+
+```{r rmd_setKnitrOptions, include=FALSE}
+# Set hook for PNG optimization ('optipng' must be installed on system)
+#knitr::knit_hooks$set(optipng = knitr::hook_optipng)
+
+# Set chunks default options
+knitr::opts_chunk$set(results='asis',
+                      echo = FALSE,           # Do not show chunks code
+                      message = FALSE,        # Hide R regular text output in reports
+                      warning = TRUE,         # Show warning messages
+                      error = FALSE,          # Stop generating report on errors
+                      cache = FALSE,          # Disable chunk result caching
+                      cache.comments = FALSE, # Changing comments does not invalidate cache
+#                      dev = "svg",            # Generate all figures as vectorized 'svg' files                      
+                      fig.dim = c(8, 8),      # Size of device for R figures
+                      autodep = TRUE,         # Automatic chunk dependencies if cache enabled
+                      optipng = '-o2');       # PNG optimization level (2=default, 5=slow, 7=very slow)
+```
+
+
+
+
+```{r rmd_loadParamsAndDependencies, warning=FALSE, cache = FALSE}
+### Define working folder
+WORKING_DIR   = getwd();
+
+
+### Load libraries, global functions/variables, and chunks
+source( file.path( WORKING_DIR, "00_generalDeps.R"));
+
+# Import chunks from source files
+read_chunk( path=file.path( WORKING_DIR, "01_prepareData.R"));
+read_chunk( path=file.path( WORKING_DIR, "02_plots.R"));
+read_chunk( path=file.path( WORKING_DIR, "03_diffExp_HTOs.R"));
+read_chunk( path=file.path( WORKING_DIR, "90_finalize.R"));
+```
+
+
+
+
+---
+title: `r paste( GLOBAL_DESCRIPTION, ANALYSIS_STEP_NAME, sep ="<BR>")`
+---
+
+
+
+
+```{r rmd_initFunctions}
+
+### Create output directory
+dir.create( PATH_ANALYSIS_OUTPUT, showWarnings = FALSE);
+
+
+### Record starting time (for report and file names)
+startTime = Sys.time();
+startTimeReport   = format( startTime, "%Y %m %d %H:%M:%S")
+startTimeFileName = format( startTime, "%Y_%m_%d_%H_%M_%S")
+
+
+### Initialize utils
+
+# Create a hash for all parameters
+paramsHash = digest( environment(), algo="murmur32");
+
+# Create a 'safe' unique prefix for output files (now specified at project scale in globalParams.R)
+#outputFilesPrefix = path_sanitize( gsub("([[:punct:]])|\\s+",
+#                                        "_",
+#                                        paste0(PROJECT_NAME, "_",
+#                                               SAMPLE_NAME, "_",
+#                                               startTimeFileName, "_",
+#                                               paramsHash, "_")),
+#                                   replacement = "_");
+
+# Set seed for pseudo random number generator
+set.seed(SEED);
+
+# Set the use of multiple cores using 'future' library, as implemented in Seurat3 when possible
+# https://github.com/satijalab/seurat/issues/457
+plan(strategy = "multicore", workers = NBCORES);
+
+# Create a hidden plotly in a tagList to allow using them in loops later
+cat('<div style="display: none">');
+htmltools::tagList(plot_ly(x = rnorm(10), type = "histogram"))
+cat('</div>');
+
+# Same for datatable....
+cat('<div style="display: none">');
+datatable( data.frame(a=1:10, b = 1:10),
+           class = "compact",
+           filter="top",
+           rownames = FALSE,
+           #colnames = ,
+           #caption = ,
+           extensions = c('Buttons', 'Select'))
+cat('</div>');
+```
+
+
+
+
+## Run informations {.tabset .tabset-fade}
+
+### Run
+<center>
+```{r rmd_runInfo_run}
+pander( c( 'Date'     = startTimeReport,
+           'Sample'   = EXPERIMENT_PROJECT_NAME,
+           'Hash'     = paramsHash));
+```
+</center>
+
+### Parameters
+```{r rmd_runInfo_params}
+listParams = as.list( environment());
+pander(listParams[order(names(listParams))]); # Show params in alphabetical order
+```
+
+### System
+<center>
+```{r rmd_runInfo_sysInfo}
+showSimpleDT( Sys.info())
+```
+</center>
+
+### R
+```{r rmd_runInfo_r}
+pander( sessionInfo());
+```
+
+<!-- Ending the tabset section -->
+## {.toc-ignore}
+<br /><br />
+
+
+
+
+## Load data
+```{r rmd_loadData}
+# Check whether results from previous run are available, in which case this is 
+# a second run for clean rendering (generation of external figures interferes 
+# with rmarkdown layout on first run). See analysisParams.
+sessionImagePath = file.path( PATH_ANALYSIS_OUTPUT, paste0( outputFilesPrefix, "sessionImage_final.RDATA"));
+FLAG_secondRun = file.exists( sessionImagePath) # FLAG specifying if this is a second run (time consuming steps can be skipped)
+if(FLAG_secondRun) 
+{
+  load( sessionImagePath)
+  FLAG_secondRun = TRUE
+  warning("Second run (for rendering), results loaded from first run. Tabset 'parameters' may not reflect values used for analysis.")
+  print(sc10x)
+} else
+{
+<<loadData>>
+}
+<<plotsPreparation>>
+```
+<br /><br />  
+
+
+
+
+## Clusters size
+```{r rmd_plotClustersSize}
+<<plotClustersSize>>
+```
+
+### HTOs vs Clusters counts analysis (X²)
+
+X² test of independance between samples/HTOs and identified cell populations/clusters.
+```{r rmd_chisquare_test_clusters_HTO}
+<<chisquare_test_clusters_HTO>>
+```
+<br />  
+
+#### Test statistics
+
+Pearson residuals, and contribution (%) to total X² statistic (100*(residuals^2)/statistic):
+```{r rmd_chisquare_test_clusters_HTO_plotResidualsAndContributions, fig.dim = c(10.5, 7)}
+<<chisquare_test_clusters_HTO_plotResidualsAndContributions>>
+```
+<br />  
+
+Mosaic-plot (surface of an element reflects the relative magnitude of its value):
+```{r rmd_chisquare_test_clusters_HTO_plotMosaic, fig.dim = c(8, 7)}
+<<chisquare_test_clusters_HTO_plotMosaic>>
+```
+<br />  
+
+
+
+
+## Dimensionality reduction {.tabset .tabset-fade}
+
+### Clusters {.tabset .tabset-fade .tabset-pills}
+<!-- #### Interactive -->
+<!-- ```{r rmd_plotDimReducInteractive_colorClusters} -->
+<!-- dimReducWidth  = 950; -->
+<!-- dimReducHeight = 800; -->
+<!-- initialPointSize = 5; -->
+<!-- showDimReducClusterLabels = FALSE; -->
+<!-- showLegend = TRUE; -->
+<!-- <<plotDimReducInteractive_colorClusters>> -->
+<!-- rm(showDimReducClusterLabels); -->
+<!-- rm(showLegend); -->
+<!-- ``` -->
+<!-- <br />   -->
+
+<!-- #### Raster -->
+```{r rmd_plotDimReducRaster_colorClusters}
+showDimReducClusterLabels = TRUE;
+showLegend = FALSE;
+<<plotDimReducRaster_colorClusters>>
+rm(showDimReducClusterLabels);
+rm(showLegend);
+```
+<br />  
+
+### Clusters + HTOs {.tabset .tabset-fade .tabset-pills}
+<!-- #### Interactive -->
+<!-- ```{r rmd_plotDimReducInteractive_colorClusters_symbolHTOs} -->
+<!-- dimReducWidth  = 950; -->
+<!-- dimReducHeight = 800; -->
+<!-- initialPointSize = 5; -->
+<!-- showDimReducClusterLabels = FALSE; -->
+<!-- showLegend = TRUE; -->
+<!-- <<plotDimReducInteractive_colorClusters_symbolHTOs>> -->
+<!-- rm(showDimReducClusterLabels); -->
+<!-- rm(showLegend); -->
+<!-- ``` -->
+<!-- <br />   -->
+
+<!-- #### Raster -->
+```{r rmd_plotDimReducRaster_colorClusters_symbolHTOs, fig.dim = c(11, 9)}
+showDimReducClusterLabels = FALSE;
+showLegend = TRUE;
+<<plotDimReducRaster_colorClusters_symbolHTOs>>
+rm(showDimReducClusterLabels);
+rm(showLegend);
+```
+<br />  
+
+### Facet HTOs {.tabset .tabset-fade .tabset-pills}
+<!-- #### Interactive -->
+<!-- ```{r rmd_plotDimReducInteractiveGG_colorClusters_facetHTOs, warning = FALSE} -->
+<!-- dimReducWidth  = 950; -->
+<!-- dimReducHeight = 800; -->
+<!-- initialPointSize = 5; -->
+<!-- showDimReducClusterLabels = FALSE; -->
+<!-- showLegend = TRUE; -->
+<!-- <<plotDimReducInteractiveGG_colorClusters_facetHTOs>> -->
+<!-- rm(showDimReducClusterLabels); -->
+<!-- rm(showLegend); -->
+<!-- ``` -->
+<!-- <br />   -->
+
+<!-- #### Raster -->
+```{r rmd_plotDimReducRaster_colorClusters_facetHTOs, fig.dim = c(11, 9)}
+showDimReducClusterLabels = FALSE;
+showLegend = TRUE;
+<<plotDimReducRaster_colorClusters_facetHTOs>>
+rm(showDimReducClusterLabels);
+rm(showLegend);
+```
+<br />  
+
+### Facet Clusters {.tabset .tabset-fade .tabset-pills}
+<!-- #### Interactive -->
+<!-- ```{r rmd_plotDimReducInteractiveGG_colorHTOs_facetClusters, warning = FALSE} -->
+<!-- dimReducWidth  = 950; -->
+<!-- dimReducHeight = 800; -->
+<!-- initialPointSize = 5; -->
+<!-- showDimReducClusterLabels = FALSE; -->
+<!-- showLegend = TRUE; -->
+<!-- <<plotDimReducInteractiveGG_colorHTOs_facetClusters>> -->
+<!-- rm(showDimReducClusterLabels); -->
+<!-- rm(showLegend); -->
+<!-- ``` -->
+<!-- <br />   -->
+
+<!-- #### Raster -->
+```{r rmd_plotDimReducRaster_colorHTOs_facetClusters_allInBackground, fig.dim = c(11, 9)}
+showDimReducClusterLabels = FALSE;
+showLegend = TRUE;
+<<plotDimReducRaster_colorHTOs_facetClusters_allInBackground>>
+rm(showDimReducClusterLabels);
+rm(showLegend);
+```
+<br />  
+
+
+
+
+### Density: ref groups
+```{r rmd_plotDimReducRaster_colorDensity_circleDensity_globalRefGroups, warning=FALSE, fig.dim = c(11, 9)}
+<<plotDimReducRaster_colorDensity_circleDensity_prepareData>>
+
+<<plotDimReducRaster_colorDensity_circleDensity_globalRefGroups>>
+```
+<br />  
+
+### Density: Facet HTOs
+```{r rmd_plotDimReducRaster_colorDensity_circleDensity_facetByHTO, warning=FALSE, fig.dim = c(9, 9)}
+<<plotDimReducRaster_colorDensity_circleDensity_facetByHTO>>
+```
+<br />  
+
+### Density: Facet Clusters + HTOs
+```{r rmd_plotDimReducRaster_colorDensity_circleDensity_facetByHTOAndCluster, warning=FALSE, fig.dim = c(0.5+(2.5*length(table(cellsData[["Cluster"]]))), 0.5+(2.25*length(HTO_FACTOR_LEVELS)))}
+<<plotDimReducRaster_colorDensity_circleDensity_facetByHTOAndCluster>>
+```
+<br />  
+
+### Density: Facet Clusters + HTOs grouped
+```{r rmd_plotDimReducRaster_colorDensity_circleDensity_facetByHTOGroupedAndCluster, warning=FALSE, fig.dim = c(0.5+(2.7*length(table(cellsData[["Cluster"]]))), 5)}
+<<plotDimReducRaster_colorDensity_circleDensity_facetByHTOGroupedAndCluster>>
+```
+<br />  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Differential expression {.tabset .tabset-fade}
+
+```{r rmd_diffExp_computeDE}
+if(!FLAG_secondRun) # check if this is a second run for rendering only (see analysisParams)
+{
+<<diffExp_computeDE>>
+# Set universe to the global list of annotations (instead of union of DE genes)
+UNIVERSE_IS_UNIONGENES = FALSE;
+<<functional_enrichment_preparation>>
+<<functional_kegg_pathway>>
+<<functional_kegg_module>>
+<<functional_go>>
+}
+```
+
+
+```{r rmd_diffExp_plotDE, warning = FALSE, fig.dim = c( 10, 10)}
+# Ignore warnings as it prevents proper ordering of figures in tabsets...
+# Warning for empty enrichments raised in previous chunks
+# Has internal check for 'FLAG_secondRun' to know whether it should generate external figures or integrate previously generated ones
+<<diffExp_plots>>
+```
+
+
+
+```{r rmd_final_saveSessionImage}
+if(!FLAG_secondRun) # check if this is a second run for rendering only (see analysisParams)
+{
+<<final_saveSessionImage>>
+}
+```
+
+
+

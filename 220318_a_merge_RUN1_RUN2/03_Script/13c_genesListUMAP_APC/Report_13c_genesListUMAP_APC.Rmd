@@ -1,0 +1,561 @@
+---
+output:
+  html_document:
+    theme: cerulean
+    toc: true
+    toc_float: true
+    toc_depth: 3
+---
+
+
+
+
+<!-- Javascript for zooming on figures (adapted from: https://stackoverflow.com/questions/40401680) -->
+
+<!-- Jquery import conflicts with DT::datatable so needs to be commented here -->
+<!-- <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script> -->
+
+<style>
+.zoomDiv {
+  display: none;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 50;
+  transform: translate(-50%, -50%);
+  background-color: #FFFFFF;
+  box-shadow: 0px 0px 50px #888888;
+  width: fit-content;
+  max-width: 90%;
+  max-height: 90%;
+  overflow: auto;
+}
+
+.zoomImg {
+  width: 100%;
+}
+</style>
+
+<script type="text/javascript">
+  $(document).ready(function() {
+    $('body').prepend("<div class=\"zoomDiv\"><img src=\"\" class=\"zoomImg\"></div>");
+    // onClick for all img except the zoomed one and link ones (filter)
+    // use 'img.zoom' and out.extra='class=\"zoom\"' in chunk to specify manually which chunk images can be zoomed
+    $('img:not(.zoomImg)').filter(':not(a *)').click(function() {
+      $('.zoomImg').attr('src', $(this).attr('src'));
+      $('.zoomDiv').show();
+    });
+    // onClick function for hiding div
+    $('img.zoomImg').click(function() {
+      $('.zoomDiv').hide();
+    });
+  });
+</script>
+
+
+
+
+<!-- Load spectrum color picker code -->
+```{js loadSpectrumJS, echo = FALSE, code=readLines("spectrum.js")}
+```
+```{css loadSpectrumCSS, echo = FALSE, code=readLines("spectrum.css")}
+```
+
+<!-- Prepare a js function extracting traces color from plotly figure -->
+```{js getColorTab, echo = FALSE}
+
+// Ask figure template from plotly, extract markers color (scatter and scattergl only), and place them in clipboard
+getColorTab = function(plotLyFigure, type = "scatter", colorFormatFun = "hex") 
+  { 
+    var template = Plotly.makeTemplate(plotLyFigure);
+    var resultColorString = "";
+    for (curTrace in template.data[type])
+    {
+      // Only use traces having markers
+      if(template.data[type][curTrace].mode == "markers") resultColorString += '"' + template.data[type][curTrace].name + '" = "' + tinycolor(template.data[type][curTrace].marker.color).toString(colorFormatFun) + '"\n';
+    }
+    // Create a dummy element to copy content to clipboard
+    var textarea = document.createElement("textarea"); textarea.textContent = resultColorString; textarea.style.position = "fixed"; document.body.appendChild(textarea); textarea.select(); document.execCommand("copy"); document.body.removeChild(textarea);
+    alert("\n" + resultColorString + "\n\nCopied to clipboard !");
+  } 
+```
+
+
+
+
+```{r rmd_setKnitrOptions, include=FALSE}
+# Set hook for PNG optimization ('optipng' must be installed on system)
+#knitr::knit_hooks$set(optipng = knitr::hook_optipng)
+
+# Set chunks default options
+knitr::opts_chunk$set(results='asis',
+                      echo = FALSE,           # Do not show chunks code
+                      message = FALSE,        # Hide R regular text output in reports
+                      warning = TRUE,         # Show warning messages
+                      error = FALSE,          # Stop generating report on errors
+                      cache = FALSE,          # Disable chunk result caching
+                      cache.comments = FALSE, # Changing comments does not invalidate cache
+#                      dev = "svg",            # Generate all figures as vectorized 'svg' files                      
+                      fig.dim = c(8, 8),      # Size of device for R figures
+                      autodep = TRUE,         # Automatic chunk dependencies if cache enabled
+                      optipng = '-o2');       # PNG optimization level (2=default, 5=slow, 7=very slow)
+```
+
+
+
+
+```{r rmd_loadParamsAndDependencies, warning=FALSE, cache = FALSE}
+### Define working folder
+WORKING_DIR   = getwd();
+
+
+### Load libraries, global functions/variables, and chunks
+source( file.path( WORKING_DIR, "00_generalDeps.R"));
+
+# Import chunks from source files
+read_chunk( path=file.path( WORKING_DIR, "01_prepareData.R"));
+read_chunk( path=file.path( WORKING_DIR, "02_plots.R"));
+read_chunk( path=file.path( WORKING_DIR, "03_diffExp_HTOs.R"));
+read_chunk( path=file.path( WORKING_DIR, "90_finalize.R"));
+```
+
+
+
+
+---
+title: `r paste( GLOBAL_DESCRIPTION, ANALYSIS_STEP_NAME, sep ="<BR>")`
+---
+
+
+
+
+```{r rmd_initFunctions}
+
+### Create output directory
+dir.create( PATH_ANALYSIS_OUTPUT, showWarnings = FALSE);
+
+
+### Record starting time (for report and file names)
+startTime = Sys.time();
+startTimeReport   = format( startTime, "%Y %m %d %H:%M:%S")
+startTimeFileName = format( startTime, "%Y_%m_%d_%H_%M_%S")
+
+
+### Initialize utils
+
+# Create a hash for all parameters
+paramsHash = digest( environment(), algo="murmur32");
+
+# Create a 'safe' unique prefix for output files (now specified at project scale in globalParams.R)
+#outputFilesPrefix = path_sanitize( gsub("([[:punct:]])|\\s+",
+#                                        "_",
+#                                        paste0(PROJECT_NAME, "_",
+#                                               SAMPLE_NAME, "_",
+#                                               startTimeFileName, "_",
+#                                               paramsHash, "_")),
+#                                   replacement = "_");
+
+# Set seed for pseudo random number generator
+set.seed(SEED);
+
+# Set the use of multiple cores using 'future' library, as implemented in Seurat3 when possible
+# https://github.com/satijalab/seurat/issues/457
+plan(strategy = "multicore", workers = NBCORES);
+
+# Create a hidden plotly in a tagList to allow using them in loops later
+cat('<div style="display: none">');
+htmltools::tagList(plot_ly(x = rnorm(10), type = "histogram"))
+cat('</div>');
+
+# Same for datatable....
+cat('<div style="display: none">');
+datatable( data.frame(a=1:10, b = 1:10),
+           class = "compact",
+           filter="top",
+           rownames = FALSE,
+           #colnames = ,
+           #caption = ,
+           extensions = c('Buttons', 'Select'))
+cat('</div>');
+```
+
+
+
+
+## Run informations {.tabset .tabset-fade}
+
+### Run
+<center>
+```{r rmd_runInfo_run}
+pander( c( 'Date'     = startTimeReport,
+           'Sample'   = EXPERIMENT_PROJECT_NAME,
+           'Hash'     = paramsHash));
+```
+</center>
+
+### Parameters
+```{r rmd_runInfo_params}
+listParams = as.list( environment());
+pander(listParams[order(names(listParams))]); # Show params in alphabetical order
+```
+
+### System
+<center>
+```{r rmd_runInfo_sysInfo}
+showSimpleDT( Sys.info())
+```
+</center>
+
+### R
+```{r rmd_runInfo_r}
+pander( sessionInfo());
+```
+
+<!-- Ending the tabset section -->
+## {.toc-ignore}
+<br /><br />
+
+
+
+
+## Load data
+```{r rmd_loadData}
+<<loadData>>
+<<plotsPreparation>>
+```
+<br /><br />  
+
+
+
+
+## Dimensionality reduction {.tabset .tabset-fade}
+
+### Clusters {.tabset .tabset-fade .tabset-pills}
+<!-- #### Interactive -->
+<!-- ```{r rmd_plotDimReducInteractive_colorClusters} -->
+<!-- dimReducWidth  = 950; -->
+<!-- dimReducHeight = 800; -->
+<!-- initialPointSize = 5; -->
+<!-- showDimReducClusterLabels = FALSE; -->
+<!-- showLegend = TRUE; -->
+<!-- <<plotDimReducInteractive_colorClusters>> -->
+<!-- rm(showDimReducClusterLabels); -->
+<!-- rm(showLegend); -->
+<!-- ``` -->
+<!-- <br />   -->
+
+#### Raster
+```{r rmd_plotDimReducRaster_colorClusters}
+showDimReducClusterLabels = TRUE;
+showLegend = FALSE;
+<<plotDimReducRaster_colorClusters>>
+rm(showDimReducClusterLabels);
+rm(showLegend);
+```
+<br />  
+
+#### Raster (no labels)
+```{r rmd_plotDimReducRaster_colorClusters_noLabels}
+showDimReducClusterLabels = FALSE;
+showLegend = FALSE;
+<<plotDimReducRaster_colorClusters>>
+rm(showDimReducClusterLabels);
+rm(showLegend);
+```
+<br />  
+
+### Clusters + HTOs {.tabset .tabset-fade .tabset-pills}
+<!-- #### Interactive -->
+<!-- ```{r rmd_plotDimReducInteractive_colorClusters_symbolHTOs} -->
+<!-- dimReducWidth  = 950; -->
+<!-- dimReducHeight = 800; -->
+<!-- initialPointSize = 5; -->
+<!-- showDimReducClusterLabels = FALSE; -->
+<!-- showLegend = TRUE; -->
+<!-- <<plotDimReducInteractive_colorClusters_symbolHTOs>> -->
+<!-- rm(showDimReducClusterLabels); -->
+<!-- rm(showLegend); -->
+<!-- ``` -->
+<!-- <br />   -->
+
+<!-- #### Raster -->
+```{r rmd_plotDimReducRaster_colorClusters_symbolHTOs, fig.dim = c(11, 9)}
+showDimReducClusterLabels = FALSE;
+showLegend = TRUE;
+<<plotDimReducRaster_colorClusters_symbolHTOs>>
+rm(showDimReducClusterLabels);
+rm(showLegend);
+```
+<br />  
+
+### Facet HTOs {.tabset .tabset-fade .tabset-pills}
+<!-- #### Interactive -->
+<!-- ```{r rmd_plotDimReducInteractiveGG_colorClusters_facetHTOs, warning = FALSE} -->
+<!-- dimReducWidth  = 950; -->
+<!-- dimReducHeight = 800; -->
+<!-- initialPointSize = 5; -->
+<!-- showDimReducClusterLabels = FALSE; -->
+<!-- showLegend = TRUE; -->
+<!-- <<plotDimReducInteractiveGG_colorClusters_facetHTOs>> -->
+<!-- rm(showDimReducClusterLabels); -->
+<!-- rm(showLegend); -->
+<!-- ``` -->
+<!-- <br />   -->
+
+<!-- #### Raster -->
+```{r rmd_plotDimReducRaster_colorClusters_facetHTOs, fig.dim = c(11, 9)}
+showDimReducClusterLabels = FALSE;
+showLegend = TRUE;
+<<plotDimReducRaster_colorClusters_facetHTOs>>
+rm(showDimReducClusterLabels);
+rm(showLegend);
+```
+<br />  
+
+### Facet Clusters {.tabset .tabset-fade .tabset-pills}
+<!-- #### Interactive -->
+<!-- ```{r rmd_plotDimReducInteractiveGG_colorHTOs_facetClusters, warning = FALSE} -->
+<!-- dimReducWidth  = 950; -->
+<!-- dimReducHeight = 800; -->
+<!-- initialPointSize = 5; -->
+<!-- showDimReducClusterLabels = FALSE; -->
+<!-- showLegend = TRUE; -->
+<!-- <<plotDimReducInteractiveGG_colorHTOs_facetClusters>> -->
+<!-- rm(showDimReducClusterLabels); -->
+<!-- rm(showLegend); -->
+<!-- ``` -->
+<!-- <br />   -->
+
+<!-- #### Raster -->
+```{r rmd_plotDimReducRaster_colorHTOs_facetClusters, fig.dim = c(11, 9)}
+showDimReducClusterLabels = FALSE;
+showLegend = TRUE;
+<<plotDimReducRaster_colorHTOs_facetClusters>>
+rm(showDimReducClusterLabels);
+rm(showLegend);
+```
+<br />  
+
+
+
+
+## Monitored genes
+```{r rmd_heterogeneity_monitoredGenes, warning = TRUE}
+<<heterogeneity_monitoredGenes>>
+```
+
+### Monitored genes heatmap
+
+Expression heatmap of monitored genes sorted by Seurat clusters:
+
+```{r rmd_heterogeneity_monitoredGenes_heatmap, fig.dim = c(8, min(1+(length(unlist(MONITORED_GENES))/10), 150))}
+<<heterogeneity_monitoredGenes_heatmap>>
+```
+
+### Monitored genes expression {.tabset .tabset-fade}
+
+#### UMAP {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_projection_UMAP, fig.dim = c(5, 5), out.width='25%'}
+useReduction='umap'
+
+cat("\n<a href='#clusters-projection'>");
+<<heterogeneity_dimReduc_thumbnail>>
+cat("</a> \n \n");
+
+<<heterogeneity_monitoredGenes_expression_projection>>
+
+cat(" \n \n");
+
+rm("useReduction");
+```
+
+<!-- Ending the tabset section -->
+#### {.toc-ignore}
+
+#### UMAP by HTO {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_projection_UMAP_split_factorHTO, fig.dim = c(18, 4.5)}
+useReduction='umap'
+metadataColSplit='factorHTO'
+
+cat("\n<a href='#clusters-projection'>");
+<<heterogeneity_dimReduc_thumbnail>>
+cat("</a> \n \n");
+
+<<heterogeneity_monitoredGenes_expression_projection_splitByMetadata>>
+
+cat(" \n \n");
+
+rm("metadataColSplit");
+rm("useReduction");
+```
+
+<!-- Ending the tabset section -->
+#### {.toc-ignore}
+
+<!-- #### tSNE {.tabset .tabset-fade} -->
+<!-- ```{r rmd_heterogeneity_monitoredGenes_expression_projection_tSNE, fig.dim = c(4, 4), out.width='25%'} -->
+<!-- useReduction='tsne' -->
+
+<!-- cat("\n<a href='#clusters-projection'>"); -->
+<!-- #<<heterogeneity_dimReduc_thumbnail>> -->
+<!-- cat("</a> \n \n"); -->
+
+<!-- #<<heterogeneity_monitoredGenes_expression_projection>> -->
+
+<!-- rm("useReduction"); -->
+<!-- ``` -->
+
+<!-- <!-- Ending the tabset section --> -->
+<!-- #### {.toc-ignore} -->
+
+#### Clusters violin {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_violin, fig.dim = c(4.5, 4.5), out.width='25%'}
+cat("\n<a href='#clusters-projection'>");
+useReduction='umap'; #c( 'umap', 'tsne');
+<<heterogeneity_dimReduc_thumbnail>>
+rm("useReduction");
+cat("</a> \n \n");
+
+<<heterogeneity_monitoredGenes_expression_violin>>
+
+cat(" \n \n");
+```
+
+<!-- Ending the tabset section -->
+#### {.toc-ignore}
+
+#### Clusters violin by HTO {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_violin_split_factorHTO, fig.dim = c(4.5, 13.5), out.width='25%'}
+cat("\n<a href='#clusters-projection'>");
+useReduction='umap'; #c( 'umap', 'tsne');
+<<heterogeneity_dimReduc_thumbnail>>
+rm("useReduction");
+cat("</a> \n \n");
+
+metadataColSplit='factorHTO'
+<<heterogeneity_monitoredGenes_expression_violin_splitByMetadata>>
+
+cat(" \n \n");
+
+rm("metadataColSplit")
+```
+
+<!-- Ending the tabset section -->
+#### {.toc-ignore}
+
+#### Clusters expression {.tabset .tabset-fade}
+```{r rmdheterogeneity_monitoredGenes_expressionCircles_by_cluster, fig.dim = c(6, 5)}
+
+<<heterogeneity_monitoredGenes_expressionCircles_by_cluster>>
+
+cat(" \n \n");
+
+```
+
+<!-- Ending the tabset section -->
+#### {.toc-ignore}
+
+
+#### Clusters expression by HTO {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expressionCircles_by_cluster_splitByMetadata, fig.dim = c(5, 15)}
+
+metadataColSplit='factorHTO'
+<<heterogeneity_monitoredGenes_expressionCircles_by_cluster_splitByMetadata>>
+
+cat(" \n \n");
+
+rm("metadataColSplit")
+```
+
+<!-- Ending the tabset section -->
+#### {.toc-ignore}
+
+
+
+
+
+
+
+
+<!-- Ending the tabset section -->
+### {.toc-ignore}
+<br /><br />
+
+
+
+
+## Modules analysis
+```{r rmd_heterogeneity_modules}
+<<heterogeneity_modules>>
+<<heterogeneity_modules_scoring>>
+```
+
+### Modules scoring heatmap
+
+Heatmap of modules scoring sorted by Seurat clusters:
+
+```{r rmd_heterogeneity_modules_heatmap, fig.dim = c(8, min(1+(length(MODULES_GENES)/10), 150))}
+<<heterogeneity_modules_heatmap>>
+```
+
+### Modules scoring {.tabset .tabset-fade}
+
+#### UMAP {.tabset .tabset-fade .tabset-pills}
+```{r rmd_heterogeneity_modules_expression_projection_UMAP, fig.dim = c(6, 6), out.width='25%'}
+useReduction='umap'
+
+cat("\n<a href='#clusters-projection'>");
+#<<heterogeneity_dimReduc_thumbnail>>
+cat("</a> \n \n");
+
+#<<heterogeneity_modules_expression_projection>>
+#<<heterogeneity_modules_expression_projection_pngFile>>
+
+rm("useReduction");
+```
+
+<!-- Ending the tabset section -->
+#### {.toc-ignore}
+
+<!-- #### tSNE {.tabset .tabset-fade .tabset-pills} -->
+<!-- ```{r rmd_heterogeneity_modules_expression_projection_tSNE, fig.dim = c(6, 6), out.width='25%'} -->
+<!-- useReduction='tsne' -->
+
+<!-- cat("\n<a href='#clusters-projection'>"); -->
+<!-- #<<heterogeneity_dimReduc_thumbnail>> -->
+<!-- cat("</a> \n \n"); -->
+
+<!-- #<<heterogeneity_modules_expression_projection>> -->
+<!-- #<<heterogeneity_modules_expression_projection_pngFile>> -->
+
+<!-- rm("useReduction"); -->
+<!-- ``` -->
+
+<!-- <!-- Ending the tabset section --> -->
+<!-- #### {.toc-ignore} -->
+
+#### Clusters violin {.tabset .tabset-fade}
+```{r rmd_heterogeneity_modules_expression_violin, fig.dim = c(6, 6), out.width='25%'}
+cat("\n<a href='#clusters-projection'>");
+useReduction='umap'; #c( 'umap', 'tsne');
+#<<heterogeneity_dimReduc_thumbnail>>
+rm("useReduction");
+cat("</a> \n \n");
+
+#<<heterogeneity_modules_expression_violin>>
+#<<heterogeneity_modules_expression_violin_pngFile>>
+```
+
+<!-- Ending the tabset section -->
+#### {.toc-ignore}
+
+
+
+
+```{r rmd_final_saveSessionImage}
+#<<final_saveSessionImage>>
+```
+
+
+
+

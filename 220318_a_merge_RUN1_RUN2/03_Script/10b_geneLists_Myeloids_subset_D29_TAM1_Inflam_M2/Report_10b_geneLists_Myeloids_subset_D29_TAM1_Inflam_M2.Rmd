@@ -1,0 +1,362 @@
+---
+output:
+  html_document:
+    theme: cerulean
+    toc: true
+    toc_float: true
+    toc_depth: 3
+---
+
+
+
+
+<!-- Javascript for zooming on figures (adapted from: https://stackoverflow.com/questions/40401680) -->
+
+<!-- Jquery import conflicts with DT::datatable so needs to be commented here -->
+<!-- <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script> -->
+
+<style>
+.zoomDiv {
+  display: none;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 50;
+  transform: translate(-50%, -50%);
+  background-color: #FFFFFF;
+  box-shadow: 0px 0px 50px #888888;
+  width: fit-content;
+  max-width: 90%;
+  max-height: 90%;
+  overflow: auto;
+}
+
+.zoomImg {
+  width: 100%;
+}
+</style>
+
+<script type="text/javascript">
+  $(document).ready(function() {
+    $('body').prepend("<div class=\"zoomDiv\"><img src=\"\" class=\"zoomImg\"></div>");
+    // onClick for all img except the zoomed one and link ones (filter)
+    // use 'img.zoom' and out.extra='class=\"zoom\"' in chunk to specify manually which chunk images can be zoomed
+    $('img:not(.zoomImg)').filter(':not(a *)').click(function() {
+      $('.zoomImg').attr('src', $(this).attr('src'));
+      $('.zoomDiv').show();
+    });
+    // onClick function for hiding div
+    $('img.zoomImg').click(function() {
+      $('.zoomDiv').hide();
+    });
+  });
+</script>
+
+
+
+
+<!-- Load spectrum color picker code -->
+```{js loadSpectrumJS, echo = FALSE, code=readLines("spectrum.js")}
+```
+```{css loadSpectrumCSS, echo = FALSE, code=readLines("spectrum.css")}
+```
+
+<!-- Prepare a js function extracting traces color from plotly figure -->
+```{js getColorTab, echo = FALSE}
+
+// Ask figure template from plotly, extract markers color (scatter and scattergl only), and place them in clipboard
+getColorTab = function(plotLyFigure, type = "scatter", colorFormatFun = "hex") 
+  { 
+    var template = Plotly.makeTemplate(plotLyFigure);
+    var resultColorString = "";
+    for (curTrace in template.data[type])
+    {
+      // Only use traces having markers
+      if(template.data[type][curTrace].mode == "markers") resultColorString += '"' + template.data[type][curTrace].name + '" = "' + tinycolor(template.data[type][curTrace].marker.color).toString(colorFormatFun) + '"\n';
+    }
+    // Create a dummy element to copy content to clipboard
+    var textarea = document.createElement("textarea"); textarea.textContent = resultColorString; textarea.style.position = "fixed"; document.body.appendChild(textarea); textarea.select(); document.execCommand("copy"); document.body.removeChild(textarea);
+    alert("\n" + resultColorString + "\n\nCopied to clipboard !");
+  } 
+```
+
+
+
+
+```{r rmd_setKnitrOptions, include=FALSE}
+# Set hook for PNG optimization ('optipng' must be installed on system)
+#knitr::knit_hooks$set(optipng = knitr::hook_optipng)
+
+# Set chunks default options
+knitr::opts_chunk$set(results='asis',
+                      echo = FALSE,           # Do not show chunks code
+                      message = FALSE,        # Hide R regular text output in reports
+                      warning = TRUE,         # Show warning messages
+                      error = FALSE,          # Stop generating report on errors
+                      cache = FALSE,          # Disable chunk result caching
+                      cache.comments = FALSE, # Changing comments does not invalidate cache
+#                      dev = "svg",            # Generate all figures as vectorized 'svg' files                      
+                      fig.dim = c(8, 8),      # Size of device for R figures
+                      autodep = TRUE,         # Automatic chunk dependencies if cache enabled
+                      optipng = '-o2');       # PNG optimization level (2=default, 5=slow, 7=very slow)
+```
+
+
+
+
+```{r rmd_loadParamsAndDependencies, warning=FALSE, cache = FALSE}
+### Define working folder
+WORKING_DIR   = getwd();
+
+
+### Load libraries, global functions/variables, and chunks
+source( file.path( WORKING_DIR, "00_generalDeps.R"));
+
+# Import chunks from source files
+read_chunk( path=file.path( WORKING_DIR, "01_prepareData.R"));
+read_chunk( path=file.path( WORKING_DIR, "02_heatmaps.R"));
+read_chunk( path=file.path( WORKING_DIR, "03_moduleScore.R"));
+read_chunk( path=file.path( WORKING_DIR, "04_cellsCounts.R"));
+read_chunk( path=file.path( WORKING_DIR, "90_finalize.R"));
+```
+
+
+
+
+---
+title: `r paste( GLOBAL_DESCRIPTION, ANALYSIS_STEP_NAME, sep ="<BR>")`
+---
+
+
+
+
+```{r rmd_initFunctions}
+
+### Create output directory
+dir.create( PATH_ANALYSIS_OUTPUT, showWarnings = FALSE);
+
+
+### Record starting time (for report and file names)
+startTime = Sys.time();
+startTimeReport   = format( startTime, "%Y %m %d %H:%M:%S")
+startTimeFileName = format( startTime, "%Y_%m_%d_%H_%M_%S")
+
+
+### Initialize utils
+
+# Create a hash for all parameters
+paramsHash = digest( environment(), algo="murmur32");
+
+# Create a 'safe' unique prefix for output files (now specified at project scale in globalParams.R)
+#outputFilesPrefix = path_sanitize( gsub("([[:punct:]])|\\s+",
+#                                        "_",
+#                                        paste0(PROJECT_NAME, "_",
+#                                               SAMPLE_NAME, "_",
+#                                               startTimeFileName, "_",
+#                                               paramsHash, "_")),
+#                                   replacement = "_");
+
+# Set seed for pseudo random number generator
+set.seed(SEED);
+
+# Set the use of multiple cores using 'future' library, as implemented in Seurat3 when possible
+# https://github.com/satijalab/seurat/issues/457
+plan(strategy = "multicore", workers = NBCORES);
+
+# Create a hidden plotly in a tagList to allow using them in loops later
+cat('<div style="display: none">');
+htmltools::tagList(plot_ly(x = rnorm(10), type = "histogram"))
+cat('</div>');
+
+# Same for datatable....
+cat('<div style="display: none">');
+datatable( data.frame(a=1:10, b = 1:10),
+           class = "compact",
+           filter="top",
+           rownames = FALSE,
+           #colnames = ,
+           #caption = ,
+           extensions = c('Buttons', 'Select'))
+cat('</div>');
+```
+
+
+
+
+## Run informations {.tabset .tabset-fade}
+
+### Run
+<center>
+```{r rmd_runInfo_run}
+pander( c( 'Date'     = startTimeReport,
+           'Sample'   = EXPERIMENT_PROJECT_NAME,
+           'Hash'     = paramsHash));
+```
+</center>
+
+### Parameters
+```{r rmd_runInfo_params}
+listParams = as.list( environment());
+pander(listParams[order(names(listParams))]); # Show params in alphabetical order
+```
+
+### System
+<center>
+```{r rmd_runInfo_sysInfo}
+showSimpleDT( Sys.info())
+```
+</center>
+
+### R
+```{r rmd_runInfo_r}
+pander( sessionInfo());
+```
+
+<!-- Ending the tabset section -->
+## {.toc-ignore}
+<br /><br />
+
+
+
+
+## Load data
+```{r rmd_loadData}
+# Check whether results from previous run are available, in which case this is 
+# a second run for clean rendering (generation of external figures interferes 
+# with rmarkdown layout on first run). See analysisParams.
+sessionImagePath = file.path( PATH_ANALYSIS_OUTPUT, paste0( outputFilesPrefix, "sessionImage_final.RDATA"));
+FLAG_secondRun = file.exists( sessionImagePath) # FLAG specifying if this is a second run (time consuming steps can be skipped)
+if(FLAG_secondRun) 
+{
+  # Do not recompute, just load saved env and integrate external png plots in current report
+  load( sessionImagePath)
+  FLAG_secondRun = TRUE
+  warning("Second run (for rendering), results loaded from first run. Tabset 'parameters' may not reflect values used for analysis.")
+  print(sc10x)
+} else
+{
+<<loadData>>
+<<loadGenesLists>>
+<<filtering>>
+}
+
+```
+<br /><br />  
+
+
+
+## Genes lists
+
+### Heatmaps by groups of cells {.tabset .tabset-fade}
+
+```{r rmd_genes_heatmaps}
+<<heatmap_compute_expression_summary_matrices>>
+<<heatmap_function_definition>>
+<<heatmaps_genes>>
+```
+<br /><br />  
+
+
+### Expression bubbles {.tabset .tabset-fade}
+```{r rmd_expression_bubbles_eachCluster_byHTO, fig.dim = c(4, 10)}
+<<expression_bubbles_eachCluster_byHTO>>
+```
+<br /><br />  
+
+
+### Expression violin by HTO {.tabset .tabset-fade}
+```{r rmd_cellsCounts_violin_eachCluster_byHTO, fig.dim = c(6, 15)}
+<<cellsCounts_violin_eachCluster_byHTO>>
+```
+<br /><br />  
+
+
+### Expression violin by cluster {.tabset .tabset-fade}
+```{r rmd_cellsCounts_violin, fig.dim = c(6, 15)}
+<<cellsCounts_violin>>
+```
+
+
+
+## Modules score
+```{r rmd_heterogeneity_modules}
+<<heterogeneity_modules_scoring>>
+```
+
+### Heatmap
+
+Heatmap of modules scoring sorted by Seurat clusters:
+
+```{r rmd_heterogeneity_modules_heatmap, fig.dim = c(10, 5)}
+<<heterogeneity_modules_heatmap>>
+```
+
+
+### Modules scoring {.tabset .tabset-fade}
+
+#### Violin by HTO {.tabset .tabset-fade}
+```{r rmd_heterogeneity_modules_expression_violin_byHTO, fig.dim = c(7, 5), out.width='25%'}
+cat("\n \n");
+<<heterogeneity_modules_expression_violin_byHTO>>
+cat("\n \n");
+```
+
+#### Clusters violin {.tabset .tabset-fade}
+```{r rmd_heterogeneity_modules_expression_violin, fig.dim = c(4, 4), out.width='25%'}
+cat("\n<a href='#clusters-projection'>");
+useReduction='umap'; #c( 'umap', 'tsne');
+<<heterogeneity_dimReduc_thumbnail>>
+rm("useReduction");
+cat("</a> \n \n");
+
+<<heterogeneity_modules_expression_violin>>
+<<heterogeneity_modules_expression_violin_pngFile>>
+cat("\n \n");
+
+```
+
+#### UMAP {.tabset .tabset-fade .tabset-pills}
+```{r rmd_heterogeneity_modules_expression_projection_UMAP, fig.dim = c(4, 4), out.width='25%'}
+useReduction='umap'
+
+cat("\n<a href='#clusters-projection'>");
+<<heterogeneity_dimReduc_thumbnail>>
+cat("</a> \n \n");
+
+<<heterogeneity_modules_expression_projection>>
+<<heterogeneity_modules_expression_projection_pngFile>>
+
+rm("useReduction");
+```
+
+
+
+<!-- Ending the tabset section -->
+#### {.toc-ignore}
+
+
+
+### Cells population {.tabset .tabset-fade}
+```{r rmd_cellsCounts, fig.dim = c(14, 7)}
+<<cellsCounts>>
+```
+
+
+
+
+### Combinatorial expression {.tabset .tabset-fade}
+```{r rmd_cellsCounts_genesCombinations, warning=FALSE, fig.dim = c(15, 7)}
+<<cellsCounts_genesCombinations>>
+```
+
+
+
+
+```{r rmd_final_saveSessionImage}
+if(!FLAG_secondRun) # check if this is a second run for rendering only (see analysisParams)
+{
+<<final_saveSessionImage>>
+}
+```
+
+

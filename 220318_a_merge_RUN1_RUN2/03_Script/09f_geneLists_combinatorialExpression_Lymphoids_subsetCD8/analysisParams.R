@@ -1,0 +1,64 @@
+###############################################################################
+# This file defines ANALYSIS parameters as global variables that will be loaded
+# before analysis starts. It should define common parameters used by the current
+# analysis
+#
+
+
+
+ANALYSIS_STEP_NAME = "09f_geneLists_combinatorialExpression_Lymphoids_subsetCD8"
+PATH_ANALYSIS_OUTPUT = file.path( PATH_PROJECT_OUTPUT, ANALYSIS_STEP_NAME)
+
+LITERAL_TITLE = "Lymphoids subsetCD8 - Combinatorial expression"
+
+
+# !!! THIS ANALYSIS STEP NEEDS TO BE STARTED TWICE !!!
+# On first time, it does all computation and generates figures as external files
+# (using png/pdf and dev.off) which causes the rmarkdown layout to fail (figures
+# in wrong tabset).
+# On second execution, the RDATA result of previous run is loaded and previously
+# generated external figures are not rendered again, but just integrated to
+# rmarkdown using computed file path. It also skips time consuming executions
+# (compute DEG analyses and enrichments).
+# See chunk 'rmd_loadData' in RMD
+
+
+# Path to R session object (from "compare conditions" previous analysis step).
+# Will be loaded in a separate env to extract objects required for current step.
+PATH_RDATA_PREVIOUS_RESULTS = file.path( PATH_PROJECT_OUTPUT, 
+                                         "08f_compareConditionsBH_Lymphoids_subsetCD8", 
+                                         "scRNAseq_sarcoma_220318_a_merge_RUN1_RUN2_sessionImage_final.RDATA");
+
+# List of genes to be analyzed / plotted
+GENES_LIST = as.list( read.table( file.path( PATH_PROJECT_REFERENCEDATA, 
+                                            "geneLists",
+                                            "genes_CD8.tsv"),
+                                  sep = "\t",
+                                  header = TRUE,
+                                  stringsAsFactors = FALSE,
+                                  row.names = NULL, 
+                                  fill = TRUE));
+
+# Remove empty elements 
+GENES_LIST = Map('[', GENES_LIST, lapply(GENES_LIST, function(x){ which( nchar( x)>0)})); # Remove empty strings
+
+HTO_FACTOR_LEVELS = c("D21-PBS", "D21-Panth", "D29-PBS", "D29-Panth"); # Order of levels to use for HTOs (for plots, must match with actual values).
+
+#### General
+
+# Seed for pseudo-random numbers
+SEED = 42;
+
+# Number of cores to use when possible (using 'future' for Seurat3, mclapply for
+# other loops)
+NBCORES = 4;
+
+# Set the max global amount of "shared" memory for paralellization (future)
+options(future.globals.maxSize= 891289600)
+
+# Number of cells above which use ggplot instead of interactive plotly
+PLOT_RASTER_NBCELLS_THRESHOLD = 10000;
+
+#### Analyses parameters
+
+MODULES_CONTROL_SIZE = 100 # Number of genes to sample as control for each group of 'module score'
