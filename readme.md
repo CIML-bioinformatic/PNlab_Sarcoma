@@ -34,12 +34,12 @@ There are 4 datasets in this study, each being a replicate containing the 4 expe
 Indvidual samples were aligned with CellRanger and analyzed individually to check for quality and identify cell populations.
 All samples were then unified in a single (merged) analysis for comparison of experimental conditions.
 
-Resulting data, html reports, and files were uploaded to Zenodo with following DOIs.
-RUN 1, cDNA 1 (align & QC): [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8277073.svg)](https://doi.org/10.5281/zenodo.8277073)
-RUN 1, cDNA 2 (align & QC): [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8279739.svg)](https://doi.org/10.5281/zenodo.8279739)
-RUN 2, cDNA 1 (align & QC): [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8279752.svg)](https://doi.org/10.5281/zenodo.8279752)
-RUN 2, cDNA 2 (align & QC): [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8279754.svg)](https://doi.org/10.5281/zenodo.8279754)
-Merged dataset (full analysis): [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8279759.svg)](https://doi.org/10.5281/zenodo.8279759)
+Resulting data, html reports, and files were uploaded to Zenodo with following DOIs:
+* RUN 1, cDNA 1 (align & QC) [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8277073.svg)](https://doi.org/10.5281/zenodo.8277073) 
+* RUN 1, cDNA 2 (align & QC) [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8279739.svg)](https://doi.org/10.5281/zenodo.8279739) 
+* RUN 2, cDNA 1 (align & QC) [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8279752.svg)](https://doi.org/10.5281/zenodo.8279752) 
+* RUN 2, cDNA 2 (align & QC) [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8279754.svg)](https://doi.org/10.5281/zenodo.8279754) 
+* Merged dataset (full analysis) [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8279759.svg)](https://doi.org/10.5281/zenodo.8279759) 
 
 
 ## Recommendations for reproducibility
