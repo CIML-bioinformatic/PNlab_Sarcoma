@@ -29,7 +29,9 @@ Required data is published on gene expression omnibus (GEO). Docker/Singularity 
 
 ## Description of the datasets
 
-There are 4 datasets in this study, each being a replicate containing the 4 experimental conditions (split by HTO).
+There are 4 datasets in this study, each being a replicate containing the 4 experimental conditions (split by HTO). 
+
+RAW sequengcing data is available from GEO accession number [GSE221164](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE221164)
 
 Indvidual samples were aligned with CellRanger and analyzed individually to check for quality and identify cell populations.
 All samples were then unified in a single (merged) analysis for comparison of experimental conditions.
