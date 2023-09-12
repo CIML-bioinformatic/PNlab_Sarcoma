@@ -29,11 +29,11 @@ Required data is published on gene expression omnibus (GEO). Docker/Singularity 
 
 ## Description of the datasets
 
-There are 4 datasets in this study, each being a replicate containing the 4 experimental conditions (split by HTO). 
+There are 4 datasets in this study, each being a replicate instance containing the 4 experimental conditions (split by HTO). 
 
-RAW sequengcing data is available from GEO accession number [GSE221164](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE221164)
+RAW sequencing data is available from GEO accession number [GSE221164](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE221164)
 
-Indvidual samples were aligned with CellRanger and analyzed individually to check for quality and identify cell populations.
+Individual samples were aligned with CellRanger and analyzed individually to check for quality and identify cell populations.
 All samples were then unified in a single (merged) analysis for comparison of experimental conditions.
 
 Resulting data, html reports, and files were uploaded to Zenodo with following DOIs:
@@ -47,21 +47,21 @@ Resulting data, html reports, and files were uploaded to Zenodo with following D
 ## Recommendations for reproducibility
 
 Software environment were created with Docker/Singularity container technologies.
-Dockerfiles are available in this repository and corresponding container as binary files on Zenodo archives.
+Dockerfiles are available in this repository and corresponding images as binary files on Zenodo archives.
 
-In order to replicate existing results, one should download binary container images as rebuilding from source does not guarantee to result in the same execution environment.
+In order to replicate existing results, one should download binary container images (rebuilding from source does not guarantee to result in the same execution environment).
 
 ## Download, adapt paths, compile reports
 
 For each sample, analyses steps are organized in separate folders, numbered in the order of execution.
-Each step is compiled individually.
+Each step is executed/compiled individually.
 
-The folders hierarchy containing code in this repository should replicate the results folder downloadable from Zenodo.
+The folders hierarchy containing code in this repository should replicate the results folders hierarchy (available from Zenodo).
 Code and data/results can (should) be stored in separate foder structures.
 
 The file 'globalParams.R' defines path to the root folders of the data/analyses and should be adapted to the execution environment.
 
 Each analysis step contains a script named 'launch_reports_compilation.R' that should be executed within the correpsonding container.
-It loads the parameters/path from globalParams, and starts the compilation of HTML from corresponding Rmd file with Knitr.
+It loads the parameters/path from globalParams, and starts the compilation of HTML report from corresponding Rmd file with Knitr.
 
 
