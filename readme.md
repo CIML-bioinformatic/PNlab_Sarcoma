@@ -1,8 +1,12 @@
-# The coenzyme A precursor pantethine restrains sarcoma growth through promotion of type 1 immunity
+# The coenzyme A precursor pantethine enhances antitumor immunity in sarcoma
 
 ## Article information
 
-**Title:** The coenzyme A precursor pantethine restrains sarcoma growth through promotion of type 1 immunity
+**Title:** The coenzyme A precursor pantethine enhances antitumor immunity in sarcoma
+
+**Published in:** *Life Science Alliance* 6(12):e202302200, 13 October 2023. [doi:10.26508/lsa.202302200](https://doi.org/10.26508/lsa.202302200)
+
+**Correction:** *Life Science Alliance* 7(2):e202302479, 29 November 2023. [doi:10.26508/lsa.202302479](https://doi.org/10.26508/lsa.202302479)
 
 **Authors:** Richard MIALLOT 1, Virginie MILLET 1, Anais ROGER 1, Romain FENOUIL 1, Catherine TARDIVEL 2, Jean-Charles MARTIN 2, Laetitia SHINTU 3, Paul BERCHARD 4, Juliane SOUSA LANZA 1, Bernard MALISSEN 1 5, Sandrine HENRI 1, Sophie UGOLINI 1, Aurélie DUTOUR 4, Pascal FINETTI 6, François BERTUCCI 6 7, Jean-Yves BLAY 4 8, Franck GALLAND 1, Philippe NAQUET 1
 
